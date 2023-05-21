@@ -2,222 +2,129 @@ package injector
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 )
 
-var dependencyMap map[string]Constructor = make(map[string]Constructor)
-var objectMap = make(map[string]*Token)
-
-var constructorMap = make(map[string]reflect.Type)
-
-type Constructor struct {
-	Path       string
-	ObjectName string
-	Type       reflect.Type
-	FuncObj    interface{}
-	Params     []*Token
-}
-
-type Token struct {
-	Path  string
-	Name  string
-	Type  reflect.Type
-	Value reflect.Value
-}
+var dependencies = make(map[string]interface{})
+var constructors = make(map[string]reflect.Value)
 
 func Init() {
-	dependencyMap = make(map[string]Constructor)
-	objectMap = make(map[string]*Token)
+	dependencies = make(map[string]interface{})
+	constructors = make(map[string]reflect.Value)
 }
 
-func LoadObject(obj interface{}) error {
-	t := reflect.TypeOf(obj)
-	var name = ""
-	var path = ""
-	if t.Kind() == reflect.Ptr {
-		name = t.Elem().Name()
-		path = t.Elem().PkgPath()
-		t = t.Elem()
-	} else {
-		name = t.Name()
-		path = t.PkgPath()
+func Provide[T any](constructor interface{}) {
+	t := reflect.TypeOf(constructor)
+	if t.Kind() != reflect.Func {
+		panic("Constructor must be a function")
 	}
-	objectMap[path+"."+name] = &Token{Type: t, Name: name, Path: path, Value: reflect.ValueOf(obj)}
-	return nil
+	if t.NumOut() == 0 {
+		panic("Constructor must return at least one value")
+	}
+	name := t.Out(0).String()
+	constructors[name] = reflect.ValueOf(constructor)
 }
 
-func GetImplementationOfInterface(t reflect.Type) *Token {
-	for _, token := range objectMap {
-		obj := token.Value.Interface()
-		if reflect.TypeOf(obj).Implements(t) {
-			return token
-		}
-	}
-	return nil
-}
-
-func Load(t interface{}) error {
-	// get type of t
-	tt := reflect.TypeOf(t)
-	if tt.Kind() == reflect.Ptr {
-		tt = tt.Elem()
-	}
-	// check if t is a constructor
-	if tt.Kind().String() != "func" {
-		return errors.New("t must be a constructor")
-	}
-
-	if tt.NumOut() == 2 {
-		// check if the second return value is an error
-		if tt.Out(1).Name() != "error" {
-			return errors.New("the second return value must be an error")
-		}
-	}
-	if tt.NumOut() < 1 || tt.NumOut() > 2 {
-		return errors.New("the number of return values must be 1 or 2")
-	}
-	var name = ""
-	var path = ""
-	if tt.Out(0).Kind() == reflect.Ptr {
-		name = tt.Out(0).Elem().Name()
-		path = tt.Out(0).Elem().PkgPath()
-	} else {
-		name = tt.Out(0).Name()
-		path = tt.Out(0).PkgPath()
-	}
-
-	constructorMap[name] = tt
-	// get name of return value
-	println(name)
-	// get params of t
-	var params []*Token
-
-	for i := 0; i < tt.NumIn(); i++ {
-		param := tt.In(i)
-		if param.Kind() == reflect.Ptr {
-			param = param.Elem()
-		}
-		params = append(params, &Token{
-			Path: param.PkgPath(),
-			Name: param.Name(), Type: param})
-	}
-	dependencyMap[path+"."+name] = Constructor{Path: path, ObjectName: name, Type: tt, Params: params, FuncObj: t}
-
-	return nil
-}
-
-type myGeneric[T any] struct{}
-
-func createObjectByConstructor(constructor Constructor) *Token {
-	objectParam := make([]reflect.Value, 0)
-	// get params
-	for _, param := range constructor.Params {
-		// get object by name
-		// check if param is interface
-		if param.Type.Kind() == reflect.Interface {
-			// get implementation of interface
-			implementation := GetImplementationOfInterface(param.Type)
-			if implementation == nil {
-				panic("implementation not found")
-			} else {
-				objectParam = append(objectParam, implementation.Value)
-			}
-			// get constructor of implementation
-
-		}
-		if param.Type.Kind() == reflect.Struct {
-			// get object by name
-			obj, ok := objectMap[param.Path+"."+param.Name]
-			if !ok {
-				// try to get constructor
-				paramConstructor, ok := constructorMap[param.Name]
-				if !ok {
-					panic("object not found: " + param.Path + "." + param.Name)
+func resolveArguments(constructor reflect.Value) ([]reflect.Value, error) {
+	var args []reflect.Value
+	for j := 0; j < constructor.Type().NumIn(); j++ {
+		argType := constructor.Type().In(j)
+		// check if arg is interface
+		if argType.Kind() == reflect.Interface {
+			// find a dependency that implements the interface
+			for _, dep := range dependencies {
+				if reflect.TypeOf(dep).Implements(argType) {
+					args = append(args, reflect.ValueOf(dep))
+					break
 				}
-				obj = createObjectByConstructor(dependencyMap[paramConstructor.PkgPath()+"."+paramConstructor.Name()])
 			}
-			objectParam = append(objectParam, obj.Value)
-		}
-	}
+			// if no dependency implements the interface, return error
+			if len(args) < j+1 {
+				return nil, fmt.Errorf("no dependency implements %s", argType.Name())
+			}
+		} else {
+			dep, err := resolveDependency(argType)
 
-	// call constructor by name
-	result := reflect.ValueOf(constructor.FuncObj).Call(objectParam)
-	// check if constructor returns error
-	if len(result) == 2 {
-		err := result[1]
-		if !err.IsNil() {
-			panic(err.Interface())
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, dep)
 		}
 	}
-	return &Token{Type: constructor.Type, Name: constructor.ObjectName, Path: constructor.Path, Value: result[0]}
+	return args, nil
 }
 
-func Inject[T any](isGlobal bool) *T {
-	// get name of type T
-	generic := myGeneric[T]{}
-	t := reflect.TypeOf(generic)
-	typeName := t.Name()
-	// substring
-	typeName = typeName[10 : len(typeName)-1]
-	println(typeName)
-	// get constructor
-	constructor, ok := dependencyMap[typeName]
+func resolveDependency(t reflect.Type) (reflect.Value, error) {
+
+	if t == nil {
+		return reflect.Value{}, errors.New("invalid type")
+	}
+
+	name := ""
+
+	// check if t is interface
+	if t.Kind() == reflect.Interface {
+		// find a dependency that implements the interface
+		for _, dep := range dependencies {
+			if reflect.TypeOf(dep).Implements(t) {
+				return reflect.ValueOf(dep), nil
+			}
+		}
+		// if no dependency implements the interface, return error
+		return reflect.Value{}, fmt.Errorf("no dependency implements %s", t.Name())
+	}
+
+	// get full name of type
+	name = t.String()
+
+	if dep, ok := dependencies[name]; ok {
+		return reflect.ValueOf(dep), nil
+	}
+
+	creating := make(map[string]bool)
+
+	if _, ok := creating[name]; ok {
+		return reflect.Value{}, fmt.Errorf("circular dependency detected for %s", name)
+	}
+
+	creating[name] = true
+	constructor, ok := constructors[name]
 	if !ok {
-		panic("constructor not found")
-	}
-	println(constructor.Path + "." + constructor.ObjectName)
-	// get in objectMap first
-	if obj, ok := objectMap[constructor.Path+"."+constructor.ObjectName]; ok {
-		return obj.Value.Interface().(*T)
-	}
-	objectParam := make([]reflect.Value, 0)
-	// get params
-	for _, param := range constructor.Params {
-		// get object by name
-		// check if param is interface
-		if param.Type.Kind() == reflect.Interface {
-			// get implementation of interface
-			implementation := GetImplementationOfInterface(param.Type)
-			if implementation == nil {
-				panic("implementation not found")
-			} else {
-				objectParam = append(objectParam, implementation.Value)
-			}
-			// get constructor of implementation
-
-		}
-		if param.Type.Kind() == reflect.Struct {
-			// get object by name
-			// obj, ok := objectMap[param.Path+"."+param.Name]
-			// if !ok {
-			// 	// try to get constructor
-			// 	paramConstructor, ok := constructorMap[param.Name]
-			// 	if !ok {
-			// 	panic("object not found: " + param.Path + "." + param.Name)
-			// 	}
-
-			// }
-			obj := createObjectByConstructor(dependencyMap[param.Path+"."+param.Name])
-			objectParam = append(objectParam, obj.Value)
-		}
+		return reflect.Value{}, fmt.Errorf("no constructor registered for %s", name)
 	}
 
-	// call constructor by name
-	result := reflect.ValueOf(constructor.FuncObj).Call(objectParam)
-	// check if constructor returns error
-	if len(result) == 2 {
-		err := result[1]
-		if !err.IsNil() {
-			panic(err.Interface())
-		}
+	args, err := resolveArguments(constructor)
+	if err != nil {
+		return reflect.Value{}, err
 	}
-	if isGlobal {
-		objectMap[constructor.Path+"."+constructor.ObjectName] = &Token{Type: constructor.Type, Name: constructor.ObjectName, Path: constructor.Path, Value: result[0]}
-	}
-	// parse result value to T
-	return result[0].Interface().(*T)
+
+	value := constructor.Call(args)[0]
+	dependencies[name] = value.Interface()
+	delete(creating, name)
+
+	return value, nil
 }
 
-func GetObjects() map[string]*Token {
-	return objectMap
+func Get[T any]() T {
+	t := reflect.TypeOf((*T)(nil)).Elem()
+	name := t.String()
+	if dep, ok := dependencies[name]; ok {
+		return dep.(T)
+	}
+
+	constructor, ok := constructors[name]
+	if !ok {
+		panic(fmt.Sprintf("No constructor registered for %s", name))
+	}
+
+	args, err := resolveArguments(constructor)
+	if err != nil {
+		panic(err)
+	}
+
+	value := constructor.Call(args)[0].Interface().(T)
+	dependencies[name] = value
+
+	return value
 }
