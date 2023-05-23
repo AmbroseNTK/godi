@@ -14,16 +14,36 @@ func Init() {
 	constructors = make(map[string]reflect.Value)
 }
 
-func Provide[T any](constructor interface{}) {
+func Provide[T any](constructor interface{}) error {
 	t := reflect.TypeOf(constructor)
 	if t.Kind() != reflect.Func {
-		panic("Constructor must be a function")
+		return errors.New("constructor must be a function")
 	}
 	if t.NumOut() == 0 {
-		panic("Constructor must return at least one value")
+		return errors.New("constructor must return at least one value")
 	}
-	name := t.Out(0).String()
-	constructors[name] = reflect.ValueOf(constructor)
+	ty := reflect.TypeOf((*T)(nil)).Elem()
+	// check if ty is interface
+	if ty.Kind() == reflect.Interface {
+		// check if type T is an interface
+		if t.Out(0).Implements(ty) {
+			name := t.Out(0).String()
+			constructors[name] = reflect.ValueOf(constructor)
+			tName := reflect.TypeOf((*T)(nil)).Elem().String()
+			constructors[tName] = reflect.ValueOf(constructor)
+		} else {
+			return errors.New("constructor must return a value that implements " + ty.String())
+		}
+	} else {
+		// check if type T is the same as the return type of constructor
+		if t.Out(0) == ty {
+			name := t.Out(0).String()
+			constructors[name] = reflect.ValueOf(constructor)
+		} else {
+			return errors.New("constructor must return a value of type " + ty.String())
+		}
+	}
+	return nil
 }
 
 func resolveArguments(constructor reflect.Value) ([]reflect.Value, error) {
