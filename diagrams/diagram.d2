@@ -1,0 +1,78 @@
+injector: {
+    lazyProvide: "ProvideLazy[T](constructor)"
+    get: "Get[T]()"
+    provide: "Provide[T](constructor)"
+    container: {
+      dep "d1": {
+        shape: "circle"
+      }
+      dep "d2": {
+        shape: "circle"
+      }
+      dep "d3": {
+        shape: "circle"
+      }
+      dep "dN": {
+        shape: "circle"
+      }
+      shape: "circle"
+    }
+    lazyProvide -> container: "Register"
+    resolveArguments
+    resolveDependencies
+    get -> container: "1. Get constructor"
+    get -> resolveArguments: "2. Resolve constructor arguments"
+    resolveArguments -> resolveDependencies: "Build or get dependencies"
+    resolveDependencies -> resolveArguments: "Resolve constructor arguments"
+    resolveArguments -> container: "Get constructor"
+    resolveDependencies -> container: "Get constructor or created object"
+    provide -> lazyProvide: "1. Register"
+    provide -> get: "2. Resolve dep immediately"
+  }
+  
+  StructA: {
+    shape: class
+    fields
+    methods()
+  }
+  
+  ConstructorA: "ConstructorA() StructA"
+  
+  ConstructorA -> StructA: "Create"
+  
+  InterfaceX: {
+    shape: class
+    methodX()
+  }
+  
+  StructB: {
+    shape: class
+    methodX()
+  }
+  
+  ConstructorB: "ConstructorB(a StructA) StructB"
+  
+  ConstructorB -> StructB: "Create"
+  
+  StructB -> InterfaceX: "Implements" {
+    style.stroke-dash: "3"
+  }
+  
+  StructC: {
+    shape: class
+    fields
+    methods
+  }
+  
+  ConstructorC: "ConstructorC(a StructA, x InterfaceX) StructC"
+  ConstructorC -> StructC: "Create"
+  
+  ConstructorA -> injector.lazyProvide: "Register"
+  ConstructorB -> injector.provide: "Register"
+  ConstructorC -> injector.provide: "Register"
+  
+  functionX: "functionX()" {
+    objectC: "objectC StructC"
+  }
+  
+  functionX.objectC -> injector.get: "Get[StructC]()"
