@@ -14,7 +14,7 @@ func Init() {
 	constructors = make(map[string]reflect.Value)
 }
 
-func Provide[T any](constructor interface{}) error {
+func ProvideLazy[T any](constructor interface{}) error {
 	t := reflect.TypeOf(constructor)
 	if t.Kind() != reflect.Func {
 		return errors.New("constructor must be a function")
@@ -43,6 +43,15 @@ func Provide[T any](constructor interface{}) error {
 			return errors.New("constructor must return a value of type " + ty.String())
 		}
 	}
+	return nil
+}
+
+func Provide[T any](constructor interface{}) error {
+	err := ProvideLazy[T](constructor)
+	if err != nil {
+		return err
+	}
+	Get[T]()
 	return nil
 }
 

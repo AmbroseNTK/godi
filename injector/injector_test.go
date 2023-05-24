@@ -47,13 +47,13 @@ func TestInjector(t *testing.T) {
 	t.Run("Test LoadObject", func(t *testing.T) {
 		injector.Init()
 
-		injector.Provide[*StructA](NewStructA)
-		injector.Provide[*StructB](NewStructB)
+		injector.ProvideLazy[*StructA](NewStructA)
+		injector.ProvideLazy[*StructB](NewStructB)
 
-		injector.Provide[InterfaceA](NewStructA)
+		injector.ProvideLazy[InterfaceA](NewStructA)
 
-		injector.Provide[*StructC](NewStructC)
-		injector.Provide[StructB](NewStructB2)
+		injector.ProvideLazy[*StructC](NewStructC)
+		injector.ProvideLazy[StructB](NewStructB2)
 
 		c := injector.Get[*StructC]()
 		if c.Text != "Hello! I'm StructC" {
