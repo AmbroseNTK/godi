@@ -9,11 +9,19 @@ import (
 var dependencies = make(map[string]interface{})
 var constructors = make(map[string]reflect.Value)
 
+// Init initializes the dependencies and constructors maps.
+// Init must be called before any other function in this package.
 func Init() {
 	dependencies = make(map[string]interface{})
 	constructors = make(map[string]reflect.Value)
 }
 
+// ProvideLazy registers a constructor function that returns a value of type T.
+// The constructor function is not called until Get[T]() is called.
+// If T is an interface, the constructor function must return a value that implements T.
+// If T is not an interface, the constructor function must return a value of type T.
+// The constructor function must return at least one value.
+// The constructor function must be a function.
 func ProvideLazy[T any](constructor interface{}) error {
 	t := reflect.TypeOf(constructor)
 	if t.Kind() != reflect.Func {
@@ -46,6 +54,13 @@ func ProvideLazy[T any](constructor interface{}) error {
 	return nil
 }
 
+// Provide registers a constructor function that returns a value of type T.
+// The constructor function is called immediately and the result is stored as a dependency.
+// If T is an interface, the constructor function must return a value that implements T.
+// If T is not an interface, the constructor function must return a value of type T.
+// The constructor function must return at least one value.
+// The constructor function must be a function.
+// Provide is a shorthand for ProvideLazy followed by Get[T].
 func Provide[T any](constructor interface{}) error {
 	err := ProvideLazy[T](constructor)
 	if err != nil {
@@ -55,6 +70,11 @@ func Provide[T any](constructor interface{}) error {
 	return nil
 }
 
+// resolveArguments resolves the dependencies of a constructor function and returns them as a slice of reflect.Value.
+// The constructor function is passed as a reflect.Value.
+// If an argument of the constructor function is an interface, resolveArguments finds a dependency that implements the interface.
+// If an argument of the constructor function is not an interface, resolveArguments finds the dependency by name.
+// If a dependency cannot be found, resolveArguments returns an error.
 func resolveArguments(constructor reflect.Value) ([]reflect.Value, error) {
 	var args []reflect.Value
 	for j := 0; j < constructor.Type().NumIn(); j++ {
@@ -84,6 +104,9 @@ func resolveArguments(constructor reflect.Value) ([]reflect.Value, error) {
 	return args, nil
 }
 
+// resolveDependency returns the dependency of a given type.
+// The dependency is retrieved from the dependencies map.
+// If the dependency is not found, an error is returned.
 func resolveDependency(t reflect.Type) (reflect.Value, error) {
 
 	if t == nil {
@@ -135,6 +158,10 @@ func resolveDependency(t reflect.Type) (reflect.Value, error) {
 	return value, nil
 }
 
+// Get returns an instance of the type specified by the type parameter T.
+// If an instance has already been created, it is returned from the cache.
+// Otherwise, a new instance is created using the registered constructor function.
+// The constructor function is called with its dependencies resolved using reflection.
 func Get[T any]() T {
 	t := reflect.TypeOf((*T)(nil)).Elem()
 	name := t.String()
@@ -158,9 +185,16 @@ func Get[T any]() T {
 	return value
 }
 
+// Inject creates a new instance of the specified struct type with its fields injected with their respective dependencies.
+// It returns the created instance.
 func Inject[T any]() T {
+	isPointer := false
 	// create struct with fields injected
 	t := reflect.TypeOf((*T)(nil)).Elem()
+	if t.Kind() == reflect.Ptr {
+		isPointer = true
+		t = t.Elem()
+	}
 	name := t.String()
 	if dep, ok := dependencies[name]; ok {
 		return dep.(T)
@@ -180,5 +214,8 @@ func Inject[T any]() T {
 		value.FieldByName(field.Name).Set(dep)
 	}
 	dependencies[name] = value.Interface()
+	if isPointer {
+		return value.Addr().Interface().(T)
+	}
 	return value.Interface().(T)
 }

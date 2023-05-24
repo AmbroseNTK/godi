@@ -73,7 +73,7 @@ func TestInjector(t *testing.T) {
 		injector.Init()
 		injector.Provide[*StructA](NewStructA)
 		injector.Provide[*StructB](NewStructB)
-		z := injector.Inject[StructZ]()
+		z := injector.Inject[*StructZ]()
 		if z.MethodZ() != "Hello! I'm StructZ" {
 			t.Errorf("Expected %s, got %s", "Hello! I'm StructZ", z.MethodZ())
 		}

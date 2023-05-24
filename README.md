@@ -15,7 +15,10 @@ func main() {
     //...
 
     // Get your dependencies
-    objA := injector.Get[*StructA]
+    objA := injector.Get[*StructA]()
+
+    // Get new object with dependencies injected by fields
+    objB := injector.Inject[*StructB]()
 }
 
 ```
