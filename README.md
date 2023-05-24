@@ -11,7 +11,7 @@ func main() {
     injector.Init()
     // Provide your dependencies with their constructor
     injector.ProvideLazy[*StructA](NewStructA)
-	injector.ProvideLazy[*InterfaceX](NewStructB)
+	injector.Provide[*InterfaceX](NewStructB)
     //...
 
     // Get your dependencies
