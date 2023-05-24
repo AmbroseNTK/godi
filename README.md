@@ -1,4 +1,4 @@
-# Godi: The most simplest Dependency Injection for Golang
+# GoDi: The simplest Dependency Injection for Golang
 ## Diagram
 ![diagram](./diagrams/diagram.svg)
 ## Simple usage
