@@ -36,6 +36,15 @@ type StructC struct {
 	Text string
 }
 
+type StructZ struct {
+	A *StructA
+	X InterfaceA
+}
+
+func (z *StructZ) MethodZ() string {
+	return "Hello! I'm StructZ"
+}
+
 func NewStructC(a *StructA, iA InterfaceA, b StructB) *StructC {
 
 	return &StructC{
@@ -44,7 +53,7 @@ func NewStructC(a *StructA, iA InterfaceA, b StructB) *StructC {
 }
 
 func TestInjector(t *testing.T) {
-	t.Run("Test LoadObject", func(t *testing.T) {
+	t.Run("Test lazy provide", func(t *testing.T) {
 		injector.Init()
 
 		injector.ProvideLazy[*StructA](NewStructA)
@@ -59,5 +68,15 @@ func TestInjector(t *testing.T) {
 		if c.Text != "Hello! I'm StructC" {
 			t.Errorf("Expected %s, got %s", "Hello! I'm StructC", c.Text)
 		}
+	})
+	t.Run("Test fields injection", func(t *testing.T) {
+		injector.Init()
+		injector.Provide[*StructA](NewStructA)
+		injector.Provide[*StructB](NewStructB)
+		z := injector.Inject[StructZ]()
+		if z.MethodZ() != "Hello! I'm StructZ" {
+			t.Errorf("Expected %s, got %s", "Hello! I'm StructZ", z.MethodZ())
+		}
+
 	})
 }

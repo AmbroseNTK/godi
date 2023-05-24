@@ -157,3 +157,28 @@ func Get[T any]() T {
 
 	return value
 }
+
+func Inject[T any]() T {
+	// create struct with fields injected
+	t := reflect.TypeOf((*T)(nil)).Elem()
+	name := t.String()
+	if dep, ok := dependencies[name]; ok {
+		return dep.(T)
+	}
+	// get fields of struct
+	var fields []reflect.StructField
+	for i := 0; i < t.NumField(); i++ {
+		fields = append(fields, t.Field(i))
+	}
+	// create struct with fields injected
+	value := reflect.New(t).Elem()
+	for _, field := range fields {
+		dep, err := resolveDependency(field.Type)
+		if err != nil {
+			panic(err)
+		}
+		value.FieldByName(field.Name).Set(dep)
+	}
+	dependencies[name] = value.Interface()
+	return value.Interface().(T)
+}
